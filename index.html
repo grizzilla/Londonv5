@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>London Explorer & Greggs Radar</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html { height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #app-container { display: flex; flex-direction: column; height: 100vh; }
+
+    /* Top Control Bar */
+    #controls {
+      background: #1e293b;
+      color: #fff;
+      padding: 10px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    #search-box {
+      flex: 1 1 180px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #fff;
+      font-size: 14px;
+    }
+    #category-select {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #fff;
+      font-size: 14px;
+    }
+    
+    /* Type Filter Checkboxes */
+    .filter-type-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #0f172a;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      font-size: 13px;
+    }
+    .filter-type-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      user-select: none;
+      font-weight: 500;
+    }
+    .filter-type-label input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: #2563eb;
+      width: 15px;
+      height: 15px;
+    }
+
+    .btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:active { background: #1d4ed8; }
+
+    /* Content Area */
+    #main-content { display: flex; flex: 1; overflow: hidden; }
+
+    /* Sidebar */
+    #sidebar {
+      width: 330px;
+      background: #f8fafc;
+      border-right: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      z-index: 500;
+    }
+    #sidebar-header {
+      padding: 12px 16px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 12px;
+      font-weight: 700;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    #sidebar-list { list-style: none; }
+    .sidebar-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .sidebar-item:hover { background: #e2e8f0; }
+    .sidebar-title { font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 4px; }
+    .sidebar-sub { font-size: 12px; color: #64748b; margin-bottom: 6px; }
+    .badge-container { display: flex; gap: 6px; align-items: center; }
+    .sidebar-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fff;
+      text-transform: uppercase;
+    }
+    .badge-requested { background-color: #475569; }
+    .badge-suggested { background-color: #0284c7; }
+
+    #map { flex: 1; width: 100%; height: 100%; }
+
+    /* SVG Pin Styling */
+    .custom-svg-pin { background: transparent; border: none; }
+
+    /* Custom Popup Styles */
+    .leaflet-popup-content-wrapper { border-radius: 8px; padding: 4px; max-width: 310px; }
+    .popup-title-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; gap: 8px; }
+    .popup-title { font-weight: 700; font-size: 15px; color: #0f172a; }
+    .popup-cat { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; }
+    .popup-row { font-size: 12px; color: #334155; margin-bottom: 4px; line-height: 1.4; }
+    .popup-row strong { color: #0f172a; }
+    .popup-link { margin-top: 8px; font-size: 12px; font-weight: 600; }
+    .popup-link a { color: #2563eb; text-decoration: none; }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 640px) {
+      #main-content { flex-direction: column-reverse; }
+      #sidebar { width: 100%; height: 220px; border-right: none; border-top: 1px solid #e2e8f0; }
+      #controls { gap: 6px; }
+      .filter-type-group { width: 100%; justify-content: space-around; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="app-container">
+  <div id="controls">
+    <input type="text" id="search-box" placeholder="Search locations..." onkeyup="filterMarkers()" />
+    
+    <select id="category-select" onchange="filterMarkers()">
+      <option value="ALL">All Categories</option>
+      <option value="Iconic Landmarks">Iconic Landmarks</option>
+      <option value="Museums">Museums & Quirky Sites</option>
+      <option value="Historic Pubs">Historic Pubs & Bars</option>
+      <option value="Markets & Food Halls">Markets & Food Halls</option>
+      <option value="Shopping">Shopping & Vintage</option>
+      <option value="Casual Dining">Casual Dining & Eats</option>
+      <option value="Fish & Chips">Fish & Chips</option>
+      <option value="Themed Tea">Themed Afternoon Tea</option>
+      <option value="Photo Spots">Photo & Public Art</option>
+      <option value="Greggs">Greggs Radar</option>
+    </select>
+
+    <!-- Classification Checkbox Filter (Placed between Category Dropdown & Find Closest) -->
+    <div class="filter-type-group">
+      <label class="filter-type-label">
+        <input type="checkbox" id="chk-requested" checked onchange="filterMarkers()" /> Requested
+      </label>
+      <label class="filter-type-label">
+        <input type="checkbox" id="chk-suggested" checked onchange="filterMarkers()" /> Suggested
+      </label>
+    </div>
+
+    <button class="btn" onclick="locateUser()">📍 Find Closest</button>
+  </div>
+
+  <div id="main-content">
+    <div id="sidebar">
+      <div id="sidebar-header">Locations Shown (<span id="location-count">0</span>)</div>
+      <ul id="sidebar-list"></ul>
+    </div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+  // Color Palette per Category
+  const categoryColors = {
+    "Iconic Landmarks": "#3b82f6",     // Blue
+    "Museums": "#06b6d4",              // Cyan
+    "Historic Pubs": "#8b5cf6",        // Purple
+    "Markets & Food Halls": "#10b981", // Green
+    "Shopping": "#ec4899",             // Pink
+    "Casual Dining": "#f97316",        // Orange
+    "Fish & Chips": "#ef4444",         // Red
+    "Themed Tea": "#d946ef",           // Magenta
+    "Photo Spots": "#84cc16",          // Lime
+    "Greggs": "#f59e0b"                // Amber
+  };
+
+  // SVG Pin Generator
+  function createPinIcon(color) {
+    const svg = `<svg width="25" height="35" viewBox="0 0 25 35" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12.5 0C5.596 0 0 5.596 0 12.5C0 21.875 12.5 35 12.5 35C12.5 35 25 21.875 25 12.5C25 5.596 19.404 0 12.5 0Z" fill="${color}" stroke="#ffffff" stroke-width="1.5"/>
+      <circle cx="12.5" cy="12.5" r="5" fill="#ffffff"/>
+    </svg>`;
+    return L.divIcon({
+      className: 'custom-svg-pin',
+      html: svg,
+      iconSize: [25, 35],
+      iconAnchor: [12.5, 35],
+      popupAnchor: [0, -30]
+    });
+  }
+
+  // Initialize Map
+  const map = L.map('map').setView([51.5074, -0.1278], 13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+
+  // Master Location Dataset
+  const rawLocations = [
+    // --- REQUESTED: HISTORIC PUBS & BARS ---
+    { name: "Anchor Bankside", cat: "Historic Pubs", type: "Requested", lat: 51.5063, lng: -0.0935, neighborhood: "Bankside", tube: "London Bridge", hours: "Mon–Sat 11 AM–11 PM, Sun 12 PM–10:30 PM" },
+    { name: "Booking Office 1869", cat: "Historic Pubs", type: "Requested", lat: 51.5306, lng: -0.1258, neighborhood: "King's Cross", tube: "King's Cross St. Pancras" },
+    { name: "Cahoots Underground", cat: "Historic Pubs", type: "Requested", lat: 51.5123, lng: -0.1388, neighborhood: "Soho", tube: "Oxford Circus / Piccadilly Circus" },
+    { name: "Captain Kidd", cat: "Historic Pubs", type: "Requested", lat: 51.5052, lng: -0.0578, neighborhood: "Wapping", tube: "Wapping" },
+    { name: "Cittie of Yorke", cat: "Historic Pubs", type: "Requested", lat: 51.5178, lng: -0.1130, neighborhood: "Holborn", tube: "Chancery Lane" },
+    { name: "Crown & Anchor", cat: "Historic Pubs", type: "Requested", lat: 51.5135, lng: -0.1264, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Duke of Wellington", cat: "Historic Pubs", type: "Requested", lat: 51.5011, lng: -0.1508, neighborhood: "Belgravia", tube: "Hyde Park Corner" },
+    { name: "Fox & Anchor", cat: "Historic Pubs", type: "Requested", lat: 51.5195, lng: -0.1012, neighborhood: "Farringdon", tube: "Farringdon" },
+    { name: "Lamb Tavern", cat: "Historic Pubs", type: "Requested", lat: 51.5128, lng: -0.0838, neighborhood: "Leadenhall Market", tube: "Monument / Bank" },
+    { name: "Museum Tavern", cat: "Historic Pubs", type: "Requested", lat: 51.5185, lng: -0.1255, neighborhood: "Bloomsbury", tube: "Holborn" },
+    { name: "Nell Gwynne", cat: "Historic Pubs", type: "Requested", lat: 51.5103, lng: -0.1238, neighborhood: "Strand / Covent Garden", tube: "Charing Cross" },
+    { name: "Old Bank of England", cat: "Historic Pubs", type: "Requested", lat: 51.5139, lng: -0.1118, neighborhood: "Fleet Street", tube: "Temple / Blackfriars" },
+    { name: "Pig & Whistle", cat: "Historic Pubs", type: "Requested", lat: 51.5100, lng: -0.1200, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Princess Louise", cat: "Historic Pubs", type: "Requested", lat: 51.5181, lng: -0.1213, neighborhood: "Holborn", tube: "Holborn" },
+    { name: "Rugby Tavern", cat: "Historic Pubs", type: "Requested", lat: 51.5222, lng: -0.1171, neighborhood: "Bloomsbury", tube: "Russell Square" },
+    { name: "Sherlock Holmes", cat: "Historic Pubs", type: "Requested", lat: 51.5071, lng: -0.1252, neighborhood: "Charing Cross", tube: "Charing Cross" },
+    { name: "Sinners Social Club", cat: "Historic Pubs", type: "Requested", lat: 51.5122, lng: -0.1245, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Soho Residence", cat: "Historic Pubs", type: "Requested", lat: 51.5126, lng: -0.1315, neighborhood: "Soho", tube: "Leicester Square" },
+    { name: "The Admiralty, Trafalgar Square", cat: "Historic Pubs", type: "Requested", lat: 51.5074, lng: -0.1277, neighborhood: "Trafalgar Square", tube: "Charing Cross" },
+    { name: "The Blackfriar", cat: "Historic Pubs", type: "Requested", lat: 51.5121, lng: -0.1037, neighborhood: "Blackfriars", tube: "Blackfriars" },
+    { name: "The Churchill Arms, Kensington", cat: "Historic Pubs", type: "Requested", lat: 51.5068, lng: -0.1945, neighborhood: "Kensington", tube: "Notting Hill Gate" },
+    { name: "The Cross Keys", cat: "Historic Pubs", type: "Requested", lat: 51.5140, lng: -0.1242, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "The Devonshire", cat: "Historic Pubs", type: "Requested", lat: 51.5113, lng: -0.1352, neighborhood: "Soho / Piccadilly", tube: "Piccadilly Circus" },
+    { name: "The Dickens Inn", cat: "Historic Pubs", type: "Requested", lat: 51.5065, lng: -0.0712, neighborhood: "St. Katharine Docks", tube: "Tower Hill" },
+    { name: "The George", cat: "Historic Pubs", type: "Requested", lat: 51.5042, lng: -0.0902, neighborhood: "Southwark", tube: "London Bridge" },
+    { name: "The Golden Fleece", cat: "Historic Pubs", type: "Requested", lat: 51.5126, lng: -0.0886, neighborhood: "Bank", tube: "Bank" },
+    { name: "The Grapes", cat: "Historic Pubs", type: "Requested", lat: 51.5091, lng: -0.0384, neighborhood: "Limehouse", tube: "Limehouse DLR" },
+    { name: "The Hound", cat: "Historic Pubs", type: "Requested", lat: 51.4862, lng: -0.2625, neighborhood: "Chiswick", tube: "Chiswick Park" },
+    { name: "The Hung Drawn & Quartered", cat: "Historic Pubs", type: "Requested", lat: 51.5098, lng: -0.0805, neighborhood: "Tower Hill", tube: "Tower Hill" },
+    { name: "The Kings Arms", cat: "Historic Pubs", type: "Requested", lat: 51.5005, lng: -0.1388, neighborhood: "Westminster", tube: "St. James's Park" },
+    { name: "The Lamb & Flag, Covent Garden", cat: "Historic Pubs", type: "Requested", lat: 51.5115, lng: -0.1257, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "The Leather Exchange", cat: "Historic Pubs", type: "Requested", lat: 51.5028, lng: -0.0825, neighborhood: "Bermondsey", tube: "London Bridge" },
+    { name: "The Little Violet Door", cat: "Historic Pubs", type: "Requested", lat: 51.5132, lng: -0.1278, neighborhood: "Soho", tube: "Tottenham Court Road" },
+    { name: "The Mayflower", cat: "Historic Pubs", type: "Requested", lat: 51.5012, lng: -0.0531, neighborhood: "Rotherhithe", tube: "Rotherhithe" },
+    { name: "The Mitre", cat: "Historic Pubs", type: "Requested", lat: 51.5095, lng: -0.1802, neighborhood: "Lancaster Gate", tube: "Lancaster Gate" },
+    { name: "The Plough", cat: "Historic Pubs", type: "Requested", lat: 51.5175, lng: -0.1260, neighborhood: "Bloomsbury", tube: "Holborn" },
+    { name: "The Salisbury Pub", cat: "Historic Pubs", type: "Requested", lat: 51.5110, lng: -0.1280, neighborhood: "Covent Garden", tube: "Leicester Square" },
+    { name: "The Ship & Shovell", cat: "Historic Pubs", type: "Requested", lat: 51.5078, lng: -0.1245, neighborhood: "Charing Cross", tube: "Charing Cross" },
+    { name: "The Ship Tavern", cat: "Historic Pubs", type: "Requested", lat: 51.5168, lng: -0.1182, neighborhood: "Holborn", tube: "Holborn" },
+    { name: "Trailer Happiness", cat: "Historic Pubs", type: "Requested", lat: 51.5160, lng: -0.2062, neighborhood: "Notting Hill", tube: "Ladbroke Grove" },
+    { name: "Vaulty Towers", cat: "Historic Pubs", type: "Requested", lat: 51.5010, lng: -0.1132, neighborhood: "Waterloo", tube: "Waterloo" },
+    { name: "Ye Olde Cheshire Cheese", cat: "Historic Pubs", type: "Requested", lat: 51.5143, lng: -0.1075, neighborhood: "Fleet Street", tube: "Blackfriars" },
+    { name: "Ye Olde Cock Tavern", cat: "Historic Pubs", type: "Requested", lat: 51.5142, lng: -0.1105, neighborhood: "Fleet Street", tube: "Temple" },
+    { name: "Ye Olde Mitre, Holborn", cat: "Historic Pubs", type: "Requested", lat: 51.5181, lng: -0.1070, neighborhood: "Holborn", tube: "Chancery Lane" },
+
+    // --- REQUESTED: CASUAL DINING & RESTAURANTS ---
+    { name: "Attendant Coffee Roasters | Fitzrovia", cat: "Casual Dining", type: "Requested", lat: 51.5186, lng: -0.1408, neighborhood: "Fitzrovia", tube: "Goodge Street" },
+    { name: "BAO Borough", cat: "Casual Dining", type: "Requested", lat: 51.5052, lng: -0.0908, neighborhood: "Borough", tube: "London Bridge", specialty: "Fluffy classic pork bao buns" },
+    { name: "Bread Ahead Bakery | Borough Market", cat: "Casual Dining", type: "Requested", lat: 51.5053, lng: -0.0901, neighborhood: "Borough Market", tube: "London Bridge", specialty: "Sourdough doughnuts" },
+    { name: "Chocolate Bar by Bullion", cat: "Casual Dining", type: "Requested", lat: 51.5120, lng: -0.1250, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Chin Chin Ice Cream", cat: "Casual Dining", type: "Requested", lat: 51.5130, lng: -0.1303, neighborhood: "Soho", tube: "Tottenham Court Road", specialty: "Liquid Nitrogen Desserts" },
+    { name: "CuppaPug", cat: "Casual Dining", type: "Requested", lat: 51.5385, lng: -0.0610, neighborhood: "Haggerston", tube: "Haggerston Overground" },
+    { name: "Five Guys Tower Bridge", cat: "Casual Dining", type: "Requested", lat: 51.5052, lng: -0.0782, neighborhood: "Tower Bridge", tube: "Tower Hill" },
+    { name: "Honest Burgers - Baker Street", cat: "Casual Dining", type: "Requested", lat: 51.5201, lng: -0.1565, neighborhood: "Marylebone", tube: "Baker Street" },
+    { name: "Honest Burgers - Borough", cat: "Casual Dining", type: "Requested", lat: 51.5042, lng: -0.0915, neighborhood: "Borough", tube: "London Bridge" },
+    { name: "Honest Burgers - Camden", cat: "Casual Dining", type: "Requested", lat: 51.5408, lng: -0.1438, neighborhood: "Camden", tube: "Camden Town" },
+    { name: "Honest Burgers - Covent Garden", cat: "Casual Dining", type: "Requested", lat: 51.5108, lng: -0.1215, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Honest Burgers - King's Cross", cat: "Casual Dining", type: "Requested", lat: 51.5308, lng: -0.1225, neighborhood: "King's Cross", tube: "King's Cross St. Pancras" },
+    { name: "Honest Burgers - Leicester Square", cat: "Casual Dining", type: "Requested", lat: 51.5105, lng: -0.1302, neighborhood: "Leicester Square", tube: "Leicester Square" },
+    { name: "Honest Burgers - London Bridge", cat: "Casual Dining", type: "Requested", lat: 51.5048, lng: -0.0822, neighborhood: "London Bridge", tube: "London Bridge" },
+    { name: "Honest Burgers - Oxford Circus", cat: "Casual Dining", type: "Requested", lat: 51.5150, lng: -0.1405, neighborhood: "Soho", tube: "Oxford Circus" },
+    { name: "Honest Burgers - Soho (Brewer St)", cat: "Casual Dining", type: "Requested", lat: 51.5118, lng: -0.1352, neighborhood: "Soho", tube: "Piccadilly Circus" },
+    { name: "Honest Burgers - Soho (Meard St)", cat: "Casual Dining", type: "Requested", lat: 51.5132, lng: -0.1328, neighborhood: "Soho", tube: "Tottenham Court Road" },
+    { name: "Honest Burgers - St Katharine Docks", cat: "Casual Dining", type: "Requested", lat: 51.5062, lng: -0.0725, neighborhood: "St. Katharine Docks", tube: "Tower Hill" },
+    { name: "Honest Burgers - Warren St", cat: "Casual Dining", type: "Requested", lat: 51.5245, lng: -0.1382, neighborhood: "Fitzrovia", tube: "Warren Street" },
+    { name: "M.Manze Tower Bridge", cat: "Casual Dining", type: "Requested", lat: 51.4981, lng: -0.0789, neighborhood: "Bermondsey", tube: "Borough", specialty: "Traditional minced beef pie & mash" },
+    { name: "M&S Café", cat: "Casual Dining", type: "Requested", lat: 51.5148, lng: -0.1512, neighborhood: "Marble Arch", tube: "Marble Arch" },
+    { name: "My Old Dutch Pancake House", cat: "Casual Dining", type: "Requested", lat: 51.5170, lng: -0.1212, neighborhood: "Holborn", tube: "Holborn", specialty: "Massive sweet/savory Dutch pancakes" },
+    { name: "Nando's Holborn", cat: "Casual Dining", type: "Requested", lat: 51.5181, lng: -0.1200, neighborhood: "Holborn", tube: "Holborn" },
+    { name: "Simpson's in the Strand", cat: "Casual Dining", type: "Requested", lat: 51.5102, lng: -0.1218, neighborhood: "Strand", tube: "Charing Cross" },
+    { name: "SpudBros Express / Spud Hut", cat: "Casual Dining", type: "Requested", lat: 51.5050, lng: -0.0870, neighborhood: "London Bridge", tube: "London Bridge" },
+    { name: "The Black Pig", cat: "Casual Dining", type: "Requested", lat: 51.5056, lng: -0.0898, neighborhood: "Borough Market", tube: "London Bridge", specialty: "Slow roast pork ciabatta" },
+    { name: "The Ginger Pig", cat: "Casual Dining", type: "Requested", lat: 51.5195, lng: -0.0745, neighborhood: "Spitalfields", tube: "Liverpool Street" },
+    { name: "The Yellow Spud Machine", cat: "Casual Dining", type: "Requested", lat: 51.5060, lng: -0.0880, neighborhood: "London Bridge", tube: "London Bridge" },
+
+    // --- REQUESTED: FISH & CHIPS ---
+    { name: "Fish Plaice", cat: "Fish & Chips", type: "Requested", lat: 51.4941, lng: -0.1741, neighborhood: "South Kensington", tube: "South Kensington" },
+    { name: "Fishcotheque", cat: "Fish & Chips", type: "Requested", lat: 51.5022, lng: -0.1132, neighborhood: "Waterloo", tube: "Waterloo" },
+    { name: "Gigs Fish and Chips", cat: "Fish & Chips", type: "Requested", lat: 51.5188, lng: -0.1378, neighborhood: "Fitzrovia", tube: "Goodge Street" },
+    { name: "Golden Chippy", cat: "Fish & Chips", type: "Requested", lat: 51.4776, lng: -0.0152, neighborhood: "Greenwich", tube: "Greenwich DLR", specialty: "Crispy cod & haddock" },
+    { name: "Poppies - Portobello Road", cat: "Fish & Chips", type: "Requested", lat: 51.5158, lng: -0.2052, neighborhood: "Notting Hill", tube: "Ladbroke Grove" },
+    { name: "Poppies Fish & Chips - Soho", cat: "Fish & Chips", type: "Requested", lat: 51.5131, lng: -0.1316, neighborhood: "Soho", tube: "Leicester Square" },
+    { name: "Poppies Fish & Chips - Spitalfields", cat: "Fish & Chips", type: "Requested", lat: 51.5192, lng: -0.0752, neighborhood: "Spitalfields", tube: "Liverpool Street" },
+    { name: "Rock and Sole Plaice", cat: "Fish & Chips", type: "Requested", lat: 51.5136, lng: -0.1252, neighborhood: "Covent Garden", tube: "Covent Garden", specialty: "Est. 1871 classic chippy" },
+    { name: "The Fryer's Delight", cat: "Fish & Chips", type: "Requested", lat: 51.5196, lng: -0.1158, neighborhood: "Holborn", tube: "Holborn", specialty: "Tallow-fried traditional chips" },
+    { name: "The SeaShell of Lisson Grove", cat: "Fish & Chips", type: "Requested", lat: 51.5242, lng: -0.1668, neighborhood: "Marylebone", tube: "Marylebone" },
+
+    // --- REQUESTED: MARKETS & FOOD HALLS ---
+    { name: "Backyard Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5211, lng: -0.0718, neighborhood: "Brick Lane", tube: "Shoreditch High Street" },
+    { name: "Borough Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5055, lng: -0.0905, neighborhood: "London Bridge", tube: "London Bridge" },
+    { name: "Camden Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5416, lng: -0.1465, neighborhood: "Camden Town", tube: "Camden Town" },
+    { name: "Greenwich Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.4815, lng: -0.0090, neighborhood: "Greenwich", tube: "Cutty Sark DLR" },
+    { name: "Maltby Street Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5005, lng: -0.0772, neighborhood: "Bermondsey", tube: "London Bridge / Bermondsey" },
+    { name: "Mercato Coperto Brick Lane", cat: "Markets & Food Halls", type: "Requested", lat: 51.5208, lng: -0.0715, neighborhood: "Brick Lane", tube: "Aldgate East" },
+    { name: "Mercato Mayfair", cat: "Markets & Food Halls", type: "Requested", lat: 51.5136, lng: -0.1524, neighborhood: "Mayfair", tube: "Marble Arch / Bond Street" },
+    { name: "Old Spitalfields Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5197, lng: -0.0743, neighborhood: "Spitalfields", tube: "Liverpool Street" },
+    { name: "Petticoat Lane Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5162, lng: -0.0768, neighborhood: "Aldgate", tube: "Aldgate East" },
+    { name: "Portobello Road Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5152, lng: -0.2057, neighborhood: "Notting Hill", tube: "Notting Hill Gate" },
+    { name: "Seven Dials Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5138, lng: -0.1264, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Shepherd's Bush Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5058, lng: -0.2265, neighborhood: "Shepherd's Bush", tube: "Shepherd's Bush Market" },
+    { name: "Southbank Centre Winter Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.5061, lng: -0.1165, neighborhood: "Southbank", tube: "Waterloo" },
+    { name: "The Greenwich Vintage Market", cat: "Markets & Food Halls", type: "Requested", lat: 51.4820, lng: -0.0060, neighborhood: "Greenwich", tube: "Cutty Sark DLR" },
+
+    // --- REQUESTED: SHOPPING & STREETS ---
+    { name: "ATIKA London", cat: "Shopping", type: "Requested", lat: 51.5205, lng: -0.0722, neighborhood: "Spitalfields", tube: "Shoreditch High Street" },
+    { name: "Brick Lane Bookshop", cat: "Shopping", type: "Requested", lat: 51.5230, lng: -0.0708, neighborhood: "Brick Lane", tube: "Aldgate East" },
+    { name: "Carnaby Street", cat: "Shopping", type: "Requested", lat: 51.5133, lng: -0.1388, neighborhood: "Soho", tube: "Oxford Circus" },
+    { name: "Chinatown", cat: "Shopping", type: "Requested", lat: 51.5118, lng: -0.1311, neighborhood: "Soho", tube: "Leicester Square" },
+    { name: "Covent Garden Piazza", cat: "Shopping", type: "Requested", lat: 51.5117, lng: -0.1240, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Harrods", cat: "Shopping", type: "Requested", lat: 51.4994, lng: -0.1635, neighborhood: "Knightsbridge", tube: "Knightsbridge" },
+    { name: "Lancaster Rd", cat: "Shopping", type: "Requested", lat: 51.5171, lng: -0.2105, neighborhood: "Notting Hill", tube: "Ladbroke Grove" },
+    { name: "MAX + BETTY", cat: "Shopping", type: "Requested", lat: 51.5165, lng: -0.0760, neighborhood: "Spitalfields", tube: "Aldgate East" },
+    { name: "Neal's Yard", cat: "Shopping", type: "Requested", lat: 51.5138, lng: -0.1264, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Old Compton St", cat: "Shopping", type: "Requested", lat: 51.5130, lng: -0.1310, neighborhood: "Soho", tube: "Leicester Square" },
+    { name: "Oxford Street & Regent Street", cat: "Shopping", type: "Requested", lat: 51.5152, lng: -0.1418, neighborhood: "Mayfair / Soho", tube: "Oxford Circus" },
+    { name: "Rokit Brick Lane", cat: "Shopping", type: "Requested", lat: 51.5225, lng: -0.0710, neighborhood: "Brick Lane", tube: "Shoreditch High Street" },
+    { name: "Selfridges", cat: "Shopping", type: "Requested", lat: 51.5144, lng: -0.1528, neighborhood: "Marylebone", tube: "Bond Street" },
+    { name: "St Lukes Mews", cat: "Shopping", type: "Requested", lat: 51.5178, lng: -0.2078, neighborhood: "Notting Hill", tube: "Ladbroke Grove" },
+    { name: "The Brick Lane Vintage Market", cat: "Shopping", type: "Requested", lat: 51.5215, lng: -0.0712, neighborhood: "Brick Lane", tube: "Shoreditch High Street" },
+    { name: "The Regent Gift Shop", cat: "Shopping", type: "Requested", lat: 51.5235, lng: -0.1580, neighborhood: "Baker Street", tube: "Baker Street" },
+    { name: "Twinings Tea Shop", cat: "Shopping", type: "Requested", lat: 51.5136, lng: -0.1112, neighborhood: "Strand", tube: "Temple" },
+
+    // --- REQUESTED: ICONIC LANDMARKS & MUSEUMS ---
+    { name: "10 Downing St", cat: "Iconic Landmarks", type: "Requested", lat: 51.5034, lng: -0.1276, neighborhood: "Westminster", tube: "Westminster" },
+    { name: "Abbey Road Studios & Crosswalk", cat: "Iconic Landmarks", type: "Requested", lat: 51.5320, lng: -0.1782, neighborhood: "St. John's Wood", tube: "St. John's Wood" },
+    { name: "Admiralty Arch", cat: "Iconic Landmarks", type: "Requested", lat: 51.5068, lng: -0.1287, neighborhood: "Westminster", tube: "Charing Cross" },
+    { name: "Big Ben & Elizabeth Tower", cat: "Iconic Landmarks", type: "Requested", lat: 51.5007, lng: -0.1246, neighborhood: "Westminster", tube: "Westminster" },
+    { name: "Buckingham Palace", cat: "Iconic Landmarks", type: "Requested", lat: 51.5014, lng: -0.1419, neighborhood: "Westminster", tube: "Victoria / Green Park" },
+    { name: "Café in the Crypt", cat: "Iconic Landmarks", type: "Requested", lat: 51.5088, lng: -0.1268, neighborhood: "Trafalgar Square", tube: "Charing Cross" },
+    { name: "Cutty Sark", cat: "Iconic Landmarks", type: "Requested", lat: 51.4828, lng: -0.0096, neighborhood: "Greenwich", tube: "Cutty Sark DLR" },
+    { name: "Kensington Palace", cat: "Iconic Landmarks", type: "Requested", lat: 51.5050, lng: -0.1878, neighborhood: "Kensington", tube: "High Street Kensington" },
+    { name: "Leicester Square", cat: "Iconic Landmarks", type: "Requested", lat: 51.5113, lng: -0.1301, neighborhood: "West End", tube: "Leicester Square" },
+    { name: "London Eye", cat: "Iconic Landmarks", type: "Requested", lat: 51.5033, lng: -0.1195, neighborhood: "Southbank", tube: "Waterloo" },
+    { name: "Marble Arch", cat: "Iconic Landmarks", type: "Requested", lat: 51.5132, lng: -0.1589, neighborhood: "Mayfair", tube: "Marble Arch" },
+    { name: "Natural History Museum", cat: "Museums", type: "Requested", lat: 51.4967, lng: -0.1764, neighborhood: "South Kensington", tube: "South Kensington" },
+    { name: "Painted Hall", cat: "Iconic Landmarks", type: "Requested", lat: 51.4831, lng: -0.0056, neighborhood: "Greenwich", tube: "Cutty Sark DLR" },
+    { name: "Piccadilly Circus & Lights", cat: "Iconic Landmarks", type: "Requested", lat: 51.5100, lng: -0.1342, neighborhood: "Piccadilly", tube: "Piccadilly Circus" },
+    { name: "Royal Observatory Greenwich", cat: "Iconic Landmarks", type: "Requested", lat: 51.4769, lng: -0.0005, neighborhood: "Greenwich", tube: "Cutty Sark DLR" },
+    { name: "Shakespeare's Globe", cat: "Iconic Landmarks", type: "Requested", lat: 51.5081, lng: -0.0972, neighborhood: "Bankside", tube: "Blackfriars" },
+    { name: "Sherlock Holmes Museum", cat: "Museums", type: "Requested", lat: 51.5237, lng: -0.1585, neighborhood: "Marylebone", tube: "Baker Street" },
+    { name: "Sky Garden", cat: "Iconic Landmarks", type: "Requested", lat: 51.5111, lng: -0.0836, neighborhood: "The City", tube: "Monument" },
+    { name: "St Katharine Docks", cat: "Iconic Landmarks", type: "Requested", lat: 51.5065, lng: -0.0712, neighborhood: "Tower Hill", tube: "Tower Hill" },
+    { name: "St Martin-in-the-Fields Church", cat: "Iconic Landmarks", type: "Requested", lat: 51.5088, lng: -0.1268, neighborhood: "Trafalgar Square", tube: "Charing Cross" },
+    { name: "St. Paul's Cathedral", cat: "Iconic Landmarks", type: "Requested", lat: 51.5138, lng: -0.0984, neighborhood: "The City", tube: "St. Paul's" },
+    { name: "Tate Modern", cat: "Museums", type: "Requested", lat: 51.5076, lng: -0.0994, neighborhood: "Bankside", tube: "Blackfriars" },
+    { name: "The British Museum", cat: "Museums", type: "Requested", lat: 51.5194, lng: -0.1270, neighborhood: "Bloomsbury", tube: "Tottenham Court Road / Holborn" },
+    { name: "The Golden Hinde", cat: "Iconic Landmarks", type: "Requested", lat: 51.5068, lng: -0.0903, neighborhood: "Bankside", tube: "London Bridge" },
+    { name: "The Lookout", cat: "Iconic Landmarks", type: "Requested", lat: 51.5140, lng: -0.0820, neighborhood: "The City", tube: "Bank" },
+    { name: "Tower of London", cat: "Iconic Landmarks", type: "Requested", lat: 51.5081, lng: -0.0759, neighborhood: "Tower Hill", tube: "Tower Hill" },
+    { name: "Trafalgar Square", cat: "Iconic Landmarks", type: "Requested", lat: 51.5080, lng: -0.1281, neighborhood: "Westminster", tube: "Charing Cross" },
+    { name: "Victoria and Albert Museum", cat: "Museums", type: "Requested", lat: 51.4966, lng: -0.1721, neighborhood: "South Kensington", tube: "South Kensington" },
+    { name: "Wellington Arch", cat: "Iconic Landmarks", type: "Requested", lat: 51.5025, lng: -0.1508, neighborhood: "Hyde Park Corner", tube: "Hyde Park Corner" },
+    { name: "Westminster Abbey", cat: "Iconic Landmarks", type: "Requested", lat: 51.4994, lng: -0.1273, neighborhood: "Westminster", tube: "Westminster" },
+    { name: "Winchester Palace", cat: "Iconic Landmarks", type: "Requested", lat: 51.5068, lng: -0.0908, neighborhood: "Bankside", tube: "London Bridge" },
+
+    // --- REQUESTED: GREGGS RADAR ---
+    { name: "Greggs - Bedford Street & Strand", cat: "Greggs", type: "Requested", address: "421-422 Strand, London WC2R 0PS", lat: 51.51165, lng: -0.1179, neighborhood: "Covent Garden", tube: "Covent Garden" },
+    { name: "Greggs - Leicester Square", cat: "Greggs", type: "Requested", address: "1 Leicester Square, London WC2H 7NA", lat: 51.5109, lng: -0.13, neighborhood: "Leicester Square", tube: "Leicester Square" },
+    { name: "Greggs - Westminster Underground Station", cat: "Greggs", type: "Requested", address: "Bridge Street, London SW1A 2JR", lat: 51.5009, lng: -0.1247, neighborhood: "Westminster", tube: "Westminster" },
+    { name: "Greggs - 143 The Strand", cat: "Greggs", type: "Requested", address: "143 The Strand, London WC2R 1JA", lat: 51.5114, lng: -0.116, neighborhood: "Covent Garden", tube: "Charing Cross" },
+    { name: "Greggs - St James' Park", cat: "Greggs", type: "Requested", address: "29/31 Palmer Street, London SW1H 0PH", lat: 51.4978, lng: -0.1347, neighborhood: "Westminster", tube: "St James’s Park" },
+    { name: "Greggs - Kingsway", cat: "Greggs", type: "Requested", address: "60 Kingsway, London WC2A 3JB", lat: 51.5165, lng: -0.116, neighborhood: "Holborn", tube: "Holborn" },
+    { name: "Greggs - Strutton Ground", cat: "Greggs", type: "Requested", address: "12 Strutton Ground, London SW1P 2HP", lat: 51.497, lng: -0.1358, neighborhood: "Westminster", tube: "St James’s Park" },
+    { name: "Greggs - Waterloo", cat: "Greggs", type: "Requested", address: "93 Lower Marsh, London SE1 7AB", lat: 51.501, lng: -0.1118, neighborhood: "Waterloo", tube: "Waterloo" },
+    { name: "Greggs - Southampton Row", cat: "Greggs", type: "Requested", address: "76 Southampton Row, London WC1B 4AR", lat: 51.52, lng: -0.1197, neighborhood: "Holborn", tube: "Holborn" },
+    { name: "Greggs - 165 Victoria Street", cat: "Greggs", type: "Requested", address: "165 Victoria Street, London SW1E 5NA", lat: 51.496, lng: -0.1414, neighborhood: "Victoria", tube: "Victoria" },
+    { name: "Greggs - Chancery Lane", cat: "Greggs", type: "Requested", address: "5 High Holborn, London WC1V 6DR", lat: 51.5167, lng: -0.1114, neighborhood: "Holborn", tube: "Chancery Lane" },
+    { name: "Greggs - Great Portland Street", cat: "Greggs", type: "Requested", address: "111 Great Portland Street, London W1W 6QQ", lat: 51.5186, lng: -0.1431, neighborhood: "Fitzrovia", tube: "Great Portland Street" },
+    { name: "Greggs - Fitzrovia", cat: "Greggs", type: "Requested", address: "101/106 Tottenham Court Road, London W1T 4TT", lat: 51.519, lng: -0.1342, neighborhood: "Fitzrovia", tube: "Goodge Street" },
+    { name: "Greggs - Ludgate Hill", cat: "Greggs", type: "Requested", address: "41/43 Ludgate Hill, London EC4M 7AB", lat: 51.5137, lng: -0.1023, neighborhood: "City of London", tube: "St Paul’s" },
+    { name: "Greggs - Leather Lane", cat: "Greggs", type: "Requested", address: "81/81A Leather Lane, London EC1N 7TS", lat: 51.5215, lng: -0.108, neighborhood: "Holborn", tube: "Chancery Lane" },
+    { name: "Greggs - Victoria Coach Station", cat: "Greggs", type: "Requested", address: "164 Buckingham Palace Road, London SW1W 9TP", lat: 51.4927, lng: -0.1464, neighborhood: "Victoria", tube: "Victoria" },
+    { name: "Greggs - Pimlico", cat: "Greggs", type: "Requested", address: "111 Lupus Street, London SW1V 3EN", lat: 51.4895, lng: -0.1368, neighborhood: "Pimlico", tube: "Pimlico" },
+    { name: "Greggs - Kennington", cat: "Greggs", type: "Requested", address: "238 Kennington Lane, London SE11 5RQ", lat: 51.4865, lng: -0.1058, neighborhood: "Kennington", tube: "Kennington" },
+    { name: "Greggs - Cheapside", cat: "Greggs", type: "Requested", address: "51 Cheapside, London EC2V 6AA", lat: 51.5144, lng: -0.093, neighborhood: "City of London", tube: "St Paul’s" },
+    { name: "Greggs - Cannon Street Station", cat: "Greggs", type: "Requested", address: "Dowgate Hill, London EC4N 6AP", lat: 51.5118, lng: -0.0919, neighborhood: "City of London", tube: "Cannon Street" },
+    { name: "Greggs - U5 Kings Cross Station", cat: "Greggs", type: "Requested", address: "Unit 5, King’s Cross Station, Euston Road, London N1 9AL", lat: 51.5305, lng: -0.1233, neighborhood: "King’s Cross", tube: "King’s Cross St Pancras" },
+    { name: "Greggs - Marylebone Station", cat: "Greggs", type: "Requested", address: "Melcombe Place, London NW1 6JJ", lat: 51.5226, lng: -0.163, neighborhood: "Marylebone", tube: "Marylebone" },
+    { name: "Greggs - Eastcheap", cat: "Greggs", type: "Requested", address: "3 Eastcheap, London EC3M 1AG", lat: 51.51, lng: -0.0841, neighborhood: "City of London", tube: "Monument" },
+    { name: "Greggs - London Bridge Station", cat: "Greggs", type: "Requested", address: "London Bridge Station, Tooley Street, London SE1 9SP", lat: 51.505, lng: -0.086, neighborhood: "London Bridge", tube: "London Bridge" },
+    { name: "Greggs - Walworth", cat: "Greggs", type: "Requested", address: "273 Walworth Road, London SE17 2QG", lat: 51.4884, lng: -0.0986, neighborhood: "Walworth", tube: "Elephant & Castle" },
+    { name: "Greggs - Old Broad Street", cat: "Greggs", type: "Requested", address: "83 Old Broad Street, London EC2M 1PR", lat: 51.514, lng: -0.0822, neighborhood: "City of London", tube: "Liverpool Street" },
+    { name: "Greggs - Paddington, Praed Street", cat: "Greggs", type: "Requested", address: "10 Praed Street, London W2 1NY", lat: 51.5157, lng: -0.176, neighborhood: "Paddington", tube: "Paddington" },
+    { name: "Greggs - Tower Bridge Road", cat: "Greggs", type: "Requested", address: "79 Tower Bridge Road, London SE1 2TE", lat: 51.4988, lng: -0.083, neighborhood: "Bermondsey", tube: "London Bridge" },
+    { name: "Greggs - Bishopsgate", cat: "Greggs", type: "Requested", address: "154 Bishopsgate, London EC2M 4LN", lat: 51.516, lng: -0.0805, neighborhood: "City of London", tube: "Liverpool Street" },
+    { name: "Greggs - Camberwell Service Station", cat: "Greggs", type: "Requested", address: "96/106 Camberwell Road, London SE5 0EN", lat: 51.4875, lng: -0.091, neighborhood: "Camberwell", tube: "Oval" },
+    { name: "Greggs - Kentish Town", cat: "Greggs", type: "Requested", address: "311 Kentish Town Road, London NW5 2TJ", lat: 51.551, lng: -0.141, neighborhood: "Kentish Town", tube: "Kentish Town" },
+    { name: "Greggs - Earls Court", cat: "Greggs", type: "Requested", address: "183 Earls Court Road, London SW5 9RD", lat: 51.492, lng: -0.1935, neighborhood: "Earl’s Court", tube: "Earl’s Court" },
+    { name: "Greggs - Whitechapel", cat: "Greggs", type: "Requested", address: "243 Whitechapel Road, London E1 1DB", lat: 51.5172, lng: -0.0642, neighborhood: "Whitechapel", tube: "Whitechapel" },
+    { name: "Greggs - Holloway Road", cat: "Greggs", type: "Requested", address: "132 Holloway Road, London N7 8JE", lat: 51.5455, lng: -0.112, neighborhood: "Holloway", tube: "Holloway Road" },
+    { name: "Greggs - Clapham Junction", cat: "Greggs", type: "Requested", address: "166 Clapham High Street, London SW4 7UG", lat: 51.4638, lng: -0.13, neighborhood: "Clapham", tube: "Clapham North" },
+    { name: "Greggs - Notting Hill", cat: "Greggs", type: "Requested", address: "238 Portobello Road, London W11 1LJ", lat: 51.516, lng: -0.204, neighborhood: "Notting Hill", tube: "Ladbroke Grove" },
+    { name: "Greggs - St Johns Road", cat: "Greggs", type: "Requested", address: "22 St Johns Road, London SW11 1PR", lat: 51.464, lng: -0.168, neighborhood: "Clapham Junction", tube: "Clapham Junction" },
+    { name: "Greggs - Kilburn", cat: "Greggs", type: "Requested", address: "79 Kilburn High Road, London NW6 5JY", lat: 51.538, lng: -0.192, neighborhood: "Kilburn", tube: "Kilburn" },
+    { name: "Greggs - Globe Town", cat: "Greggs", type: "Requested", address: "112 Roman Road, London E2 0RN", lat: 51.527, lng: -0.056, neighborhood: "Globe Town", tube: "Bethnal Green" },
+    { name: "Greggs - Archway", cat: "Greggs", type: "Requested", address: "33 Junction Road, London N19 5QT", lat: 51.565, lng: -0.135, neighborhood: "Archway", tube: "Archway" },
+    { name: "Greggs - Balham", cat: "Greggs", type: "Requested", address: "141 Balham High Road, London SW12 9AU", lat: 51.444, lng: -0.152, neighborhood: "Balham", tube: "Balham" },
+    { name: "Greggs - Harringay, Green Lanes", cat: "Greggs", type: "Requested", address: "Green Lanes, Harringay, London N4", lat: 51.577, lng: -0.098, neighborhood: "Harringay", tube: "Harringay Green Lanes" },
+    { name: "Greggs - Putney", cat: "Greggs", type: "Requested", address: "145 High Street, Putney, London SW15 1RT", lat: 51.46, lng: -0.216, neighborhood: "Putney", tube: "Putney" },
+    { name: "Greggs - West Norwood", cat: "Greggs", type: "Requested", address: "324 Norwood Road, London SE27 9AF", lat: 51.431, lng: -0.103, neighborhood: "West Norwood", tube: "West Norwood" },
+    { name: "Greggs - East Acton", cat: "Greggs", type: "Requested", address: "69 Old Oak Common Lane, London W3 7DD", lat: 51.516, lng: -0.26, neighborhood: "Acton", tube: "East Acton" },
+    { name: "Greggs - Park Royal", cat: "Greggs", type: "Requested", address: "Acton Lane, London NW10", lat: 51.529, lng: -0.284, neighborhood: "Park Royal", tube: "Park Royal" },
+    { name: "Greggs - Tottenham", cat: "Greggs", type: "Requested", address: "Broad Lane, Tottenham, London N15", lat: 51.589, lng: -0.071, neighborhood: "Tottenham", tube: "Tottenham Hale" },
+    { name: "Greggs - Catford", cat: "Greggs", type: "Requested", address: "136 Rushey Green, Catford, London SE6 4HQ", lat: 51.444, lng: -0.02, neighborhood: "Catford", tube: "Catford" },
+    { name: "Greggs - Blackheath", cat: "Greggs", type: "Requested", address: "28 Tranquil Vale, Blackheath, London SE3 0AX", lat: 51.465, lng: 0.008, neighborhood: "Blackheath", tube: "Blackheath" },
+    { name: "Greggs - Wimbledon Station", cat: "Greggs", type: "Requested", address: "17 Wimbledon Bridge, London SW19 7NH", lat: 51.421, lng: -0.206, neighborhood: "Wimbledon", tube: "Wimbledon" },
+
+    // ==========================================
+    // --- NEW SUGGESTED LOCATIONS (50+ SPOTS) ---
+    // ==========================================
+
+    // --- SUGGESTED: QUIRKY MUSEUMS & SITES ---
+    { name: "Sir John Soane's Museum", cat: "Museums", type: "Suggested", lat: 51.5170, lng: -0.1175, neighborhood: "Holborn", tube: "Holborn", specialty: "Eccentric 19th-century collector's house lit by candlelight" },
+    { name: "Hunterian Museum", cat: "Museums", type: "Suggested", lat: 51.5152, lng: -0.1168, neighborhood: "Holborn", tube: "Holborn", specialty: "Anatomical specimens & historical surgical tools" },
+    { name: "Wellcome Collection", cat: "Museums", type: "Suggested", lat: 51.5258, lng: -0.1338, neighborhood: "Euston", tube: "Euston", specialty: " Quirky museum exploring medicine, life, and art" },
+    { name: "Viktor Wynd Museum of Curiosities", cat: "Museums", type: "Suggested", lat: 51.5360, lng: -0.0558, neighborhood: "Hackney", tube: "Bethnal Green", specialty: "Oddities, taxidermy, and occult artifacts" },
+    { name: "Dennis Severs' House", cat: "Museums", type: "Suggested", lat: 51.5193, lng: -0.0762, neighborhood: "Spitalfields", tube: "Liverpool Street", specialty: "Immersive time-capsule 18th-century Huguenot house" },
+    { name: "Grant Museum of Zoology", cat: "Museums", type: "Suggested", lat: 51.5238, lng: -0.1345, neighborhood: "Bloomsbury", tube: "Euston Square", specialty: "Jar of moles & rare extinct animal skeletons" },
+    { name: "The Postal Museum & Mail Rail", cat: "Museums", type: "Suggested", lat: 51.5245, lng: -0.1118, neighborhood: "Clerkenwell", tube: "Farringdon", specialty: "Ride the subterranean mini postal train" },
+    { name: "Novelty Automation", cat: "Museums", type: "Suggested", lat: 51.5202, lng: -0.1142, neighborhood: "Holborn", tube: "Chancery Lane", specialty: "Satirical arcade of hand-built mechanical games" },
+
+    // --- SUGGESTED: THEMED AFTERNOON TEA ---
+    { name: "Sketch (The Gallery)", cat: "Themed Tea", type: "Suggested", lat: 51.5126, lng: -0.1415, neighborhood: "Mayfair", tube: "Oxford Circus", specialty: "Iconic quirky high tea & egg-shaped pod bathrooms" },
+    { name: "Mr Fogg's House of Botanicals Tea", cat: "Themed Tea", type: "Suggested", lat: 51.5222, lng: -0.1305, neighborhood: "Fitzrovia", tube: "Goodge Street", specialty: "Victorian botanical cocktail & afternoon tea" },
+    { name: "Ampersand Hotel Science Afternoon Tea", cat: "Themed Tea", type: "Suggested", lat: 51.4945, lng: -0.1738, neighborhood: "South Kensington", tube: "South Kensington", specialty: "Interactive science-themed pastries & smoke pots" },
+    { name: "Biscuiteers Notting Hill", cat: "Themed Tea", type: "Suggested", lat: 51.5135, lng: -0.2078, neighborhood: "Notting Hill", tube: "Ladbroke Grove", specialty: "Hand-iced cookie icing classes & afternoon tea" },
+    { name: "Fortnum & Mason Jubilee Tea Salon", cat: "Themed Tea", type: "Suggested", lat: 51.5082, lng: -0.1381, neighborhood: "Piccadilly", tube: "Piccadilly Circus", specialty: "Classic luxury British afternoon tea standard" },
+    { name: "Brigit's Bakery Bus Tour", cat: "Themed Tea", type: "Suggested", lat: 51.5080, lng: -0.1280, neighborhood: "Trafalgar Square", tube: "Charing Cross", specialty: "Afternoon tea served on a vintage double-decker bus" },
+
+    // --- SUGGESTED: PHOTO SPOTS & PUBLIC ART ---
+    { name: "St Dunstan in the East", cat: "Photo Spots", type: "Suggested", lat: 51.5098, lng: -0.0825, neighborhood: "The City", tube: "Monument", specialty: "Medieval church ruins turned lush public garden park" },
+    { name: "Leake Street Arches (Graffiti Tunnel)", cat: "Photo Spots", type: "Suggested", lat: 51.5018, lng: -0.1152, neighborhood: "Waterloo", tube: "Waterloo", specialty: "London's largest legal urban street art tunnel" },
+    { name: "God's Own Junkyard", cat: "Photo Spots", type: "Suggested", lat: 51.5862, lng: -0.0035, neighborhood: "Walthamstow", tube: "Walthamstow Central", specialty: "Massive glowing neon sign warehouse & café" },
+    { name: "Horizon 22", cat: "Photo Spots", type: "Suggested", lat: 51.5135, lng: -0.0828, neighborhood: "The City", tube: "Bank", specialty: "Highest free viewing platform in Europe" },
+    { name: "The Garden at 120", cat: "Photo Spots", type: "Suggested", lat: 51.5118, lng: -0.0818, neighborhood: "The City", tube: "Aldgate", specialty: "Open-air rooftop garden with panoramas" },
+    { name: "Kyoto Garden in Holland Park", cat: "Photo Spots", type: "Suggested", lat: 51.5022, lng: -0.2045, neighborhood: "Kensington", tube: "Holland Park", specialty: "Tranquil Japanese waterfall park with peacocks" },
+    { name: "Tulip Stairs at Queen's House", cat: "Photo Spots", type: "Suggested", lat: 51.4812, lng: -0.0052, neighborhood: "Greenwich", tube: "Cutty Sark DLR", specialty: "Iconic spiral staircase photography spot" },
+    { name: "Shad Thames", cat: "Photo Spots", type: "Suggested", lat: 51.5035, lng: -0.0725, neighborhood: "Tower Bridge", tube: "Tower Hill", specialty: "Historic cobblestone Victorian warehouse street" },
+    { name: "Outernet London (Now Building)", cat: "Photo Spots", type: "Suggested", lat: 51.5158, lng: -0.1308, neighborhood: "Soho", tube: "Tottenham Court Road", specialty: "Immersive giant 8K LED floor-to-ceiling screens" },
+
+    // --- SUGGESTED: VINTAGE & THRIFT SHOPS ---
+    { name: "Beyond Retro Soho", cat: "Shopping", type: "Suggested", lat: 51.5128, lng: -0.1382, neighborhood: "Soho", tube: "Oxford Circus", specialty: "Huge curated vintage clothing collection" },
+    { name: "Blitz Vintage Store", cat: "Shopping", type: "Suggested", lat: 51.5202, lng: -0.0718, neighborhood: "Brick Lane", tube: "Aldgate East", specialty: "Multi-room vintage clothing department store" },
+    { name: "Paper Dress Vintage", cat: "Shopping", type: "Suggested", lat: 51.5458, lng: -0.0552, neighborhood: "Hackney", tube: "Hackney Central", specialty: "Daytime vintage boutique & evening live music venue" },
+    { name: "PicknWeight Covent Garden", cat: "Shopping", type: "Suggested", lat: 51.5142, lng: -0.1260, neighborhood: "Covent Garden", tube: "Covent Garden", specialty: "Buy vintage clothing by the kilo weight" },
+    { name: "Reign Vintage", cat: "Shopping", type: "Suggested", lat: 51.5136, lng: -0.1332, neighborhood: "Soho", tube: "Tottenham Court Road", specialty: "High-end designer vintage streetwear" },
+
+    // --- SUGGESTED: WEEKLY MARKETS & HIDDEN GEMS ---
+    { name: "Columbia Road Flower Market", cat: "Markets & Food Halls", type: "Suggested", lat: 51.5288, lng: -0.0692, neighborhood: "Shoreditch", tube: "Hoxton / Bethnal Green", specialty: "Vibrant Sunday-only street flower market" },
+    { name: "Broadway Market", cat: "Markets & Food Halls", type: "Suggested", lat: 51.5365, lng: -0.0608, neighborhood: "London Fields", tube: "London Fields", specialty: "Saturday street market with artisan food & crafts" },
+    { name: "Pop Brixton", cat: "Markets & Food Halls", type: "Suggested", lat: 51.4642, lng: -0.1138, neighborhood: "Brixton", tube: "Brixton", specialty: "Shipping container street food hub & community space" },
+    { name: "Southbank Centre Food Market", cat: "Markets & Food Halls", type: "Suggested", lat: 51.5058, lng: -0.1172, neighborhood: "Southbank", tube: "Waterloo", specialty: "Weekend gourmet international street eats" },
+    { name: "Bermondsey Antiques Market", cat: "Markets & Food Halls", type: "Suggested", lat: 51.5002, lng: -0.0812, neighborhood: "Bermondsey", tube: "Borough", specialty: "Friday early-morning antique deal market" },
+
+    // --- SUGGESTED: ADDITIONAL FISH & CHIPS ---
+    { name: "Golden Hind Marylebone", cat: "Fish & Chips", type: "Suggested", lat: 51.5182, lng: -0.1538, neighborhood: "Marylebone", tube: "Bond Street", specialty: "Historic 1914 chippy with traditional batter" },
+    { name: "Toff's of Muswell Hill", cat: "Fish & Chips", type: "Suggested", lat: 51.5902, lng: -0.1425, neighborhood: "Muswell Hill", tube: "Highgate", specialty: "Award-winning classic suburban fish & chips" },
+    { name: "Hobson's Fish & Chips Soho", cat: "Fish & Chips", type: "Suggested", lat: 51.5135, lng: -0.1350, neighborhood: "Soho", tube: "Piccadilly Circus", specialty: "Gluten-free batter options & fresh daily catch" },
+    { name: "Sutton and Sons Islington", cat: "Fish & Chips", type: "Suggested", lat: 51.5380, lng: -0.1022, neighborhood: "Islington", tube: "Highbury & Islington", specialty: "Family-run chippy with famous vegan fish options" },
+
+    // --- SUGGESTED: MUST-EAT FAVORITE RESTAURANTS ---
+    { name: "Dishoom Covent Garden", cat: "Casual Dining", type: "Suggested", lat: 51.5125, lng: -0.1265, neighborhood: "Covent Garden", tube: "Covent Garden", specialty: "Bombay cafe famous for House Black Daal & Bacon Naan" },
+    { name: "Padella Borough Market", cat: "Casual Dining", type: "Suggested", lat: 51.5048, lng: -0.0902, neighborhood: "Borough", tube: "London Bridge", specialty: "Fresh handmade pasta (pici cacio e pepe)" },
+    { name: "Flat Iron Covent Garden", cat: "Casual Dining", type: "Suggested", lat: 51.5120, lng: -0.1248, neighborhood: "Covent Garden", tube: "Covent Garden", specialty: "Affordable top-quality steak & free soft serve" },
+    { name: "Hoppers Soho", cat: "Casual Dining", type: "Suggested", lat: 51.5130, lng: -0.1312, neighborhood: "Soho", tube: "Leicester Square", specialty: "Sri Lankan hoppers, dosas & aromatic kothu" },
+    { name: "Kiln Soho", cat: "Casual Dining", type: "Suggested", lat: 51.5122, lng: -0.1348, neighborhood: "Soho", tube: "Piccadilly Circus", specialty: "Open wood-fired Thai noodle counter" },
+    { name: "Blacklock Soho", cat: "Casual Dining", type: "Suggested", lat: 51.5116, lng: -0.1345, neighborhood: "Soho", tube: "Piccadilly Circus", specialty: "Chops cooked over charcoal & legendary Sunday roast" },
+    { name: "Gloria Shoreditch", cat: "Casual Dining", type: "Suggested", lat: 51.5248, lng: -0.0782, neighborhood: "Shoreditch", tube: "Old Street", specialty: "Flamboyant Italian trattoria with lemon meringue pie" },
+    { name: "Duck & Waffle", cat: "Casual Dining", type: "Suggested", lat: 51.5162, lng: -0.0808, neighborhood: "The City", tube: "Liverpool Street", specialty: "24/7 high-rise dining with duck leg & waffle" }
+  ];
+
+  // Automatic Fallback Data Generator
+  function getFormattedLoc(loc) {
+    return {
+      name: loc.name,
+      cat: loc.cat,
+      type: loc.type || "Requested",
+      lat: loc.lat,
+      lng: loc.lng,
+      neighborhood: loc.neighborhood || "Central London",
+      address: loc.address || `${loc.name}, London, UK`,
+      setting: loc.setting || "Indoors / Walk-in",
+      reservations: loc.reservations || "Walk-ins welcome (No booking needed)",
+      tube: loc.tube || "Nearby Tube Station",
+      hours: loc.hours || "Mon–Sat 10:00 AM–11:00 PM, Sun 12:00 PM–10:00 PM",
+      bestTime: loc.bestTime || "Off-peak hours (2:00 PM–4:00 PM)",
+      worstTime: loc.worstTime || "Peak rush hours (12:00 PM–2:00 PM & 6:00 PM–8:00 PM)",
+      specialty: loc.specialty || ""
+    };
+  }
+
+  let markerStore = [];
+  let userMarker = null;
+
+  // Render Markers & Initial Sidebar
+  function loadMarkers() {
+    rawLocations.forEach(raw => {
+      const loc = getFormattedLoc(raw);
+      const pinColor = categoryColors[loc.cat] || '#3b82f6';
+      const customIcon = createPinIcon(pinColor);
+
+      const m = L.marker([loc.lat, loc.lng], { icon: customIcon }).addTo(map);
+
+      // Type Badge HTML for Popup Header
+      const typeBadgeClass = loc.type === "Suggested" ? "badge-suggested" : "badge-requested";
+
+      // Construct Popup HTML with all structured fields
+      let popupHTML = `
+        <div class="popup-title-container">
+          <div class="popup-title">${loc.name}</div>
+          <span class="sidebar-badge ${typeBadgeClass}">${loc.type}</span>
+        </div>
+        <div class="popup-cat" style="color:${pinColor}">${loc.cat} • ${loc.neighborhood}</div>
+        <div class="popup-row"><strong>Tube:</strong> ${loc.tube}</div>
+        <div class="popup-row"><strong>Setting:</strong> ${loc.setting}</div>
+        <div class="popup-row"><strong>Reservations:</strong> ${loc.reservations}</div>
+        <div class="popup-row"><strong>Hours:</strong> ${loc.hours}</div>
+        <div class="popup-row"><strong>Best Time:</strong> ${loc.bestTime}</div>
+        <div class="popup-row"><strong>Worst Time:</strong> ${loc.worstTime}</div>
+      `;
+
+      if (loc.specialty) {
+        popupHTML += `<div class="popup-row"><strong>Specialty / Feature:</strong> ${loc.specialty}</div>`;
+      }
+
+      popupHTML += `<div class="popup-link"><a href="https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}" target="_blank">🗺️ Open Directions in Google Maps</a></div>`;
+
+      m.bindPopup(popupHTML);
+      markerStore.push({ marker: m, data: loc, color: pinColor });
+    });
+
+    updateSidebar(markerStore);
+  }
+
+  // Update Dynamic Sidebar
+  function updateSidebar(visibleItems) {
+    const listEl = document.getElementById('sidebar-list');
+    const countEl = document.getElementById('location-count');
+    listEl.innerHTML = '';
+    countEl.textContent = visibleItems.length;
+
+    visibleItems.forEach(item => {
+      const li = document.createElement('li');
+      li.className = 'sidebar-item';
+      
+      const typeBadgeClass = item.data.type === "Suggested" ? "badge-suggested" : "badge-requested";
+
+      li.innerHTML = `
+        <div class="sidebar-title">${item.data.name}</div>
+        <div class="sidebar-sub">📍 ${item.data.neighborhood} | 🚇 ${item.data.tube.split('(')[0]}</div>
+        <div class="badge-container">
+          <span class="sidebar-badge" style="background-color: ${item.color}">${item.data.cat}</span>
+          <span class="sidebar-badge ${typeBadgeClass}">${item.data.type}</span>
+        </div>
+      `;
+      li.onclick = () => {
+        map.setView([item.data.lat, item.data.lng], 16);
+        item.marker.openPopup();
+      };
+      listEl.appendChild(li);
+    });
+  }
+
+  // Filter Markers & Sidebar based on Search, Category, AND Requested/Suggested Checkboxes
+  function filterMarkers() {
+    const searchVal = document.getElementById('search-box').value.toLowerCase();
+    const catVal = document.getElementById('category-select').value;
+    const showRequested = document.getElementById('chk-requested').checked;
+    const showSuggested = document.getElementById('chk-suggested').checked;
+    
+    const visibleItems = [];
+
+    markerStore.forEach(item => {
+      const matchesSearch = item.data.name.toLowerCase().includes(searchVal) || 
+                            item.data.neighborhood.toLowerCase().includes(searchVal) ||
+                            item.data.tube.toLowerCase().includes(searchVal);
+      
+      const matchesCat = (catVal === 'ALL') || (item.data.cat === catVal);
+      
+      const matchesType = (item.data.type === 'Requested' && showRequested) || 
+                          (item.data.type === 'Suggested' && showSuggested);
+
+      if (matchesSearch && matchesCat && matchesType) {
+        if (!map.hasLayer(item.marker)) map.addLayer(item.marker);
+        visibleItems.push(item);
+      } else {
+        if (map.hasLayer(item.marker)) map.removeLayer(item.marker);
+      }
+    });
+
+    updateSidebar(visibleItems);
+  }
+
+  // Locate User GPS
+  function locateUser() {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const uLat = pos.coords.latitude;
+        const uLng = pos.coords.longitude;
+
+        if (userMarker) map.removeLayer(userMarker);
+
+        userMarker = L.circleMarker([uLat, uLng], {
+          radius: 9,
+          fillColor: '#2563eb',
+          color: '#ffffff',
+          weight: 3,
+          opacity: 1,
+          fillOpacity: 0.9
+        }).addTo(map).bindPopup("<b>You Are Here</b>").openPopup();
+
+        let closest = null;
+        let minDistance = Infinity;
+
+        markerStore.forEach(item => {
+          if (map.hasLayer(item.marker)) {
+            const loc = item.data;
+            const dist = map.distance([uLat, uLng], [loc.lat, loc.lng]);
+            if (dist < minDistance) {
+              minDistance = dist;
+              closest = loc;
+            }
+          }
+        });
+
+        if (closest) {
+          map.setView([uLat, uLng], 15);
+          alert(`Nearest visible spot is "${closest.name}" (${Math.round(minDistance)} meters away).`);
+        } else {
+          map.setView([uLat, uLng], 14);
+        }
+      },
+      () => alert("Unable to retrieve your current location. Please check GPS permissions.")
+    );
+  }
+
+  loadMarkers();
+</script>
+</body>
+</html>
